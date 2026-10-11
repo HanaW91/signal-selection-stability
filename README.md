@@ -9,6 +9,7 @@ A small study that takes stability selection, a variable-selection method from h
 1. **No signal is selected stably.** Across 30 candidate signals, the highest selection probability is 0.53 against a threshold of 0.80. Cross-validated LASSO agrees and selects nothing.
 2. **Picking by in-sample IC does not survive.** A portfolio of the 5 signals with the best in-sample IC has an out-of-sample Sharpe of 0.09. Across all 30 signals, the rank correlation between train IC and test IC is 0.29, and the sign agrees for only 20.
 3. **The one result that looked good was market beta.** Ranking by stability probability, or simply equal-weighting all 30 signals, gave out-of-sample Sharpes of 1.08 and 1.37. Regressing those returns on the market shows betas of 0.88 and 0.65, and no statistically significant alpha once the market is removed. A portfolio that is just "long high-beta stocks" does as well.
+4. **Costs and error bars remove what is left.** The stability-ranked portfolio turns over about once a week; hedged and net of 10 bps its Sharpe is −0.05. Every hedged Sharpe has a 95% interval that includes zero, and the gap between stability ranking and IC ranking is not statistically distinguishable from zero either.
 
 ![Selection probability per signal](charts/signal_stability/fig1_selection_probability.png)
 
@@ -81,12 +82,38 @@ Regressing each long-short return series on the market return over the same wind
 
 No rule has a statistically significant alpha. The stability-ranked portfolio happened to contain `parkinson_21` and `beta_126`; the IC-ranked one contained no volatility signal. The gap between them is whether the rule happened to be long beta in a rising market, not evidence that one ranking is better.
 
+## Costs, an ex-ante hedge, and uncertainty
+
+The two tables above are gross of costs, use a hedge ratio fitted with hindsight, and report Sharpe ratios without error bars. `07_backtest.py` holds the same quintile portfolios as explicit weights and addresses all three. Its gross Sharpes reproduce the tables above exactly.
+
+- **Costs.** Turnover is measured at every rebalance, after letting the previous weights drift with returns, and charged at a flat rate per unit of notional traded.
+- **Ex-ante hedge.** The hedge ratio on date *t* is the portfolio's own beta, the sum of weight × rolling 126-day beta, both known at the close of *t*.
+- **Uncertainty.** 95% intervals from a circular block bootstrap (blocks of 4 weeks, 5,000 draws). Rules are compared on the same resampled dates, so the interval is for the *difference* in Sharpe.
+
+| Rule | Gross Sharpe (95% CI) | Turnover per year | Break-even cost | Net Sharpe at 10 bps | Hedged Sharpe (95% CI) | Hedged, net of 10 bps |
+|---|---|---|---|---|---|---|
+| Top 5 by in-sample IC | 0.09 (−0.86, 1.09) | 52× | 4 bps | −0.15 | −0.04 (−0.93, 0.94) | −0.29 |
+| Top 5 by stability probability | 1.08 (0.08, 2.06) | 105× | 25 bps | 0.65 | 0.44 (−0.57, 1.48) | −0.05 |
+| All 30, equal weight | 1.37 (0.38, 2.35) | 71× | 39 bps | 1.02 | 0.95 (−0.08, 1.98) | 0.56 |
+| Long high beta (reference) | 1.25 (0.27, 2.23) | 14× | 258 bps | 1.20 | 0.39 (−0.64, 1.41) | 0.33 |
+
+Turnover is notional traded per year for a book that is 1 long and 1 short. Break-even cost is the flat rate at which the gross return is fully spent.
+
+![Sharpe ratios with bootstrap intervals](charts/signal_stability/fig4_sharpe_intervals.png)
+
+- **The stability-ranked portfolio does not survive.** It contains both reversal signals, so it trades roughly its whole book every week. After the hedge and 10 bps of costs nothing is left.
+- **Stability ranking is not shown to beat IC ranking.** The Sharpe difference is 0.99 gross (95% CI −0.09 to 2.07) and 0.48 after hedging (−0.57 to 1.51).
+- **No hedged Sharpe is distinguishable from zero.** With 187 weekly returns the intervals are about ±1 wide, so no single Sharpe in this study should be read as an estimate of skill.
+- **Hindsight was not what flattered the hedge.** The ex-ante hedged Sharpes (0.44, 0.95, 0.39) are close to the in-sample ones in the previous table (0.42, 0.81, 0.50).
+
+Equal-weighting all 30 signals holds up best. Its hedged Sharpe exceeds the IC-ranked portfolio's by 0.99 (−0.01 to 1.96), but that is one of eight unadjusted comparisons on one test period, and its own interval includes zero.
+
 ## Limitations
 
 - **Survivorship bias.** The universe is today's large caps. High-volatility winners are included by construction and high-volatility losers have dropped out, which flatters volatility, beta and momentum signals. This is acceptable for a study of selection stability and is a reason not to quote any return figure here as achievable.
-- **Hedged Sharpes are optimistic.** The hedge ratio is estimated on the same test data it is applied to.
+- **The ex-ante hedge slightly over-hedges.** Residual betas after hedging are −0.09 to −0.16, consistent with noise in rolling betas that are not shrunk towards 1. The cost of trading the hedge is not included.
 - **One test period, one regime.** 187 weekly observations, almost all of it a rising market.
-- **No costs.** Reversal and short-horizon signals in particular would lose much of their gross return to turnover.
+- **Costs are a flat rate.** A fixed number of basis points per unit traded, with no model of spread, market impact or borrow cost.
 - **Low power by design.** 102 stocks is a small cross-section. The natural extension is the full S&P 500 with point-in-time constituents, with the same thresholds fixed in advance.
 
 ## Reproduce
@@ -98,6 +125,7 @@ python scripts/02_build_signals.py
 python scripts/03_stability_selection.py
 python scripts/04_out_of_sample.py
 python scripts/05_beta_check.py
+python scripts/07_backtest.py
 python scripts/06_figures.py
 ```
 

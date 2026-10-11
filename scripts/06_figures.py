@@ -4,10 +4,12 @@ Step 6 - Figures for the README.
     pip install matplotlib
     python scripts/06_figures.py
 
-Input : data/stability_selection.csv, data/oos_signal_ic.csv, data/beta_check.csv
+Input : data/stability_selection.csv, data/oos_signal_ic.csv, data/beta_check.csv,
+        data/backtest_summary.csv (from step 7; fig4 is skipped if it is missing)
 Output: charts/signal_stability/fig1_selection_probability.png
         charts/signal_stability/fig2_train_vs_test_ic.png
         charts/signal_stability/fig3_beta_hedge.png
+        charts/signal_stability/fig4_sharpe_intervals.png
 """
 
 from pathlib import Path
@@ -141,12 +143,54 @@ def fig3_beta_hedge() -> None:
     plt.close(fig)
 
 
+def fig4_sharpe_intervals() -> bool:
+    src = DATA / "backtest_summary.csv"
+    if not src.exists():
+        print("Skipping fig4: run scripts/07_backtest.py first.")
+        return False
+    d = pd.read_csv(src, index_col="rule")
+    names = {"ic_top5": "Top 5 by\nin-sample IC", "stab_top5": "Top 5 by\nstability",
+             "all": "All 30,\nequal weight", "beta_126 only": "Long high beta\n(reference)"}
+    d = d.loc[[r for r in names if r in d.index]]
+    y = list(range(len(d)))[::-1]                 # first rule at the top
+    off = 0.16
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.9))
+    ax.axvline(0, color=INK2, linewidth=0.8)
+    for dy, pre, colour, label in [(off, "gross", BLUE, "As traded"),
+                                   (-off, "hedged", ORANGE, "Hedged with ex-ante beta")]:
+        for yi, (_, r) in zip(y, d.iterrows()):
+            ax.plot([r[f"{pre}_ci_lo"], r[f"{pre}_ci_hi"]], [yi + dy, yi + dy], color=colour,
+                    linewidth=2.2, solid_capstyle="round", zorder=2)
+            ax.text(r[f"{pre}_ci_hi"] + 0.06, yi + dy, f"{r[f'{pre}_sharpe']:.2f}", va="center",
+                    fontsize=9)
+        ax.scatter(d[f"{pre}_sharpe"], [yi + dy for yi in y], s=62, color=colour,
+                   edgecolor=SURFACE, linewidth=1.6, label=label, zorder=3)
+    ax.set_yticks(y, [names[r] for r in d.index])
+    ax.tick_params(axis="y", labelcolor=INK)
+    ax.set_ylim(-0.6, len(d) - 0.25)
+    lo, hi = d[["gross_ci_lo", "hedged_ci_lo"]].min().min(), d[["gross_ci_hi", "hedged_ci_hi"]].max().max()
+    ax.set_xlim(lo - 0.15, hi + 0.45)
+    ax.set_xlabel("Annualised Sharpe, test 2023-2026 (dot = estimate, line = 95% interval)")
+    ax.grid(axis="y", visible=False)
+    ax.spines["left"].set_visible(False)
+    ax.legend(loc="upper left", bbox_to_anchor=(0, 1.1), frameon=False, fontsize=9, ncols=2,
+              borderaxespad=0, handletextpad=0.3)
+    titled(fig, "After hedging, no Sharpe is distinguishable from zero",
+           "Block-bootstrap intervals over 187 weekly returns, gross of costs")
+    fig.subplots_adjust(left=0.19, right=0.97, top=0.78, bottom=0.13)
+    fig.savefig(OUT / "fig4_sharpe_intervals.png", dpi=200)
+    plt.close(fig)
+    return True
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     fig1_selection_probability()
     fig2_train_vs_test_ic()
     fig3_beta_hedge()
-    print(f"Saved 3 figures to {OUT}")
+    n = 3 + fig4_sharpe_intervals()
+    print(f"Saved {n} figures to {OUT}")
 
 
 if __name__ == "__main__":
